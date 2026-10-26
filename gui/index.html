@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>islandGen</title>
+<style>
+  :root { --k:#000; --g:#9a9a9a; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--g); color:var(--k);
+    font:13px/1.3 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+  #app { display:grid; grid-template-columns:300px 1fr; height:100%; }
+  #panel { border-right:1px solid var(--k); overflow-y:auto; padding:14px 14px 40px; }
+  h1 { font-size:18px; margin:0 0 12px; letter-spacing:-.02em; }
+  h2 { font-size:11px; text-transform:uppercase; letter-spacing:.1em; margin:18px 0 8px;
+    border-top:1px solid var(--k); padding-top:10px; }
+  .row { margin:0 0 10px; }
+  .row label { display:flex; justify-content:space-between; gap:8px; }
+  .row label span:last-child { font-weight:700; }
+  .row small { display:block; font-size:11px; margin-top:1px; }
+  input[type=range] { -webkit-appearance:none; appearance:none; width:100%; height:16px; margin:4px 0 0; background:transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height:1px; background:var(--k); }
+  input[type=range]::-moz-range-track { height:1px; background:var(--k); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:10px; height:14px; margin-top:-7px; background:var(--k); border:0; }
+  input[type=range]::-moz-range-thumb { width:10px; height:14px; background:var(--k); border:0; border-radius:0; }
+  input[type=checkbox] { -webkit-appearance:none; appearance:none; width:14px; height:14px; margin:0; border:1px solid var(--k); background:var(--g); }
+  input[type=checkbox]:checked { background:var(--k); }
+  .seed { display:flex; gap:6px; }
+  .seed input { flex:1; min-width:0; font:inherit; padding:7px 8px; border:1px solid var(--k); background:var(--g); color:var(--k); }
+  button { font:inherit; font-weight:700; padding:7px 10px; border:1px solid var(--k); background:var(--g);
+    color:var(--k); cursor:pointer; }
+  button:active, button.primary { background:var(--k); color:var(--g); }
+  #jumpinfo { white-space:pre-line; }
+  .legend { margin:10px 0 0; } .legend div { display:flex; gap:8px; align-items:center; margin:3px 0; }
+  .sw { width:14px; height:14px; border:1px solid var(--k); flex:none; } .sw.solid { background:var(--k); }
+  button.primary { width:100%; margin-top:6px; }
+  select { width:100%; font:inherit; padding:6px; margin-top:4px; border:1px solid var(--k); background:var(--g); color:var(--k); border-radius:0; }
+  .checks label { display:flex; gap:6px; align-items:center; margin:4px 0; }
+  #status { margin-top:10px; min-height:1.3em; white-space:pre-line; }
+  #status.err { text-decoration:underline; }
+  #view { position:relative; min-width:0; }
+  canvas { display:block; }
+  @media (max-width:700px) {
+    #app { grid-template-columns:1fr; grid-template-rows:55vh 1fr; }
+    #view { order:-1; } #panel { border-right:0; border-top:1px solid var(--k); }
+  }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head>
+<body>
+<div id="app">
+  <div id="panel">
+    <h1>islandGen</h1>
+    <div class="row">
+      <div class="seed">
+        <input id="seed" type="number" value="3" aria-label="seed">
+        <button id="dice" title="random seed">RND</button>
+      </div>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" id="spin"> auto spin</label>
+    </div>
+    <div class="legend" id="legend">
+      <div><span class="sw solid"></span><span>top — walkable</span><span id="n_top"></span></div>
+      <div><span class="sw"></span><span>rock — sides + underside</span><span id="n_rock"></span></div>
+      <div><span class="sw" style="background:repeating-linear-gradient(45deg,#000 0 1px,transparent 1px 4px)"></span><span>stone — stairs, hop &amp; stepping stones</span><span id="n_fill"></span></div>
+      <div><span class="sw" style="width:6px"></span><span>player, to scale</span></div>
+      <div id="jumpinfo"></div>
+    </div>
+    <div id="sliders"></div>
+    <h2>export</h2>
+    <div class="row"><label for="target"><span>engine</span></label>
+      <select id="target">
+        <option value="unity">Unity (m)</option>
+        <option value="blender">Blender (m)</option>
+        <option value="unreal">Unreal (cm)</option>
+        <option value="roblox">Roblox (studs)</option>
+      </select>
+      <small>always writes land.glb (meters) + scene.json; the .obj gets this engine's scale</small>
+    </div>
+    <button class="primary" id="export">Export</button>
+    <button id="reset" style="width:100%;margin-top:10px">Reset knobs</button>
+    <div id="status"></div>
+  </div>
+  <div id="view"></div>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "./vendor/OrbitControls.js";
+
+const $ = (id) => document.getElementById(id);
+const status = (msg, err) => { $("status").textContent = msg; $("status").className = err ? "err" : ""; };
+
+// ---------- three.js view ----------
+const view = $("view");
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+view.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+renderer.setClearColor(0x000000, 0);   // no background
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 5000);
+camera.position.set(150, 140, 170);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight("#ffffff", "#000000", 0.5));
+const sun = new THREE.DirectionalLight("#ffffff", 2.6);
+sun.position.set(120, 220, 80);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -250, right: 250, top: 250, bottom: -250, far: 800 });
+scene.add(sun, sun.target);
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(3000, 64).rotateX(-Math.PI / 2),
+  new THREE.MeshLambertMaterial({ color: "#a8a8a8" })
+);
+floor.receiveShadow = true;
+// no floor
+
+const islandGroup = new THREE.Group();
+scene.add(islandGroup);
+// two colors only: unlit fills + black edges. material ids match the exported data.
+const MATS = [
+  new THREE.MeshBasicMaterial({ color: "#000000", polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }), // 0 top
+  new THREE.MeshBasicMaterial({ color: "#9a9a9a", polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }), // 1 rock
+];
+const LINE = new THREE.LineBasicMaterial({ color: "#000000" });
+const player = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 0.5), new THREE.MeshBasicMaterial({ color: "#000000" }));
+scene.add(player);
+
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(view);
+
+let firstFrame = true;
+const TOP = new THREE.Color("#b0b0b0"), ROCK = new THREE.Color("#3c3c3c");
+function showScene(data) {
+  islandGroup.children.forEach((m) => m.geometry.dispose());
+  islandGroup.clear();
+  if (!data.faces.length) return;
+  // sort faces so each material is one contiguous group: 0 top, 1 rock, 2 filler, 3 sand
+  const F = data.faces, M = data.mat, order = [], count = [0, 0, 0, 0];
+  for (let mm = 0; mm < 4; mm++) for (let t = 0; t < M.length; t++) if (M[t] === mm) { order.push(t); count[mm]++; }
+  const nTop = count[0];
+  const idx = new Uint32Array(order.length * 3);
+  order.forEach((t, i) => idx.set([F[t*3], F[t*3+1], F[t*3+2]], i * 3));
+  let g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(data.verts, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  g.addGroup(0, count[0] * 3, 0);
+  g.addGroup(count[0] * 3, count[1] * 3, 1);
+  g.addGroup((count[0] + count[1]) * 3, count[2] * 3, 1);
+  g.addGroup((count[0] + count[1] + count[2]) * 3, count[3] * 3, 1); // sand patches: gray fill
+  // filler tops: gray fill + every triangle edge drawn = hatched look
+  const fg = new THREE.BufferGeometry();
+  fg.setAttribute("position", g.attributes.position);
+  fg.setIndex(new THREE.BufferAttribute(idx.slice((count[0] + count[1]) * 3, (count[0] + count[1] + count[2]) * 3), 1));
+  islandGroup.add(new THREE.LineSegments(new THREE.WireframeGeometry(fg), LINE));
+  g.computeBoundingBox();
+  const m = new THREE.Mesh(g, MATS);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), LINE);
+  islandGroup.add(m, edges);
+  player.scale.y = data.player_height;
+  player.position.set(data.player_at[0], data.player_at[1] + data.player_height / 2, data.player_at[2]);
+  $("n_top").textContent = nTop.toLocaleString();
+  $("n_rock").textContent = count[1].toLocaleString();
+  $("n_fill").textContent = count[2].toLocaleString();
+  const box = g.boundingBox;
+  const c = box.getCenter(new THREE.Vector3());
+  sun.target.position.copy(c);
+  sun.position.copy(c).add(new THREE.Vector3(60, 260, 40));
+  if (firstFrame) {
+    const size = box.getSize(new THREE.Vector3()).length();
+    controls.target.copy(c);
+    camera.position.copy(c).add(new THREE.Vector3(1, 0.5, 1.1).normalize().multiplyScalar(size * 1.25 + 4));
+    firstFrame = false;
+  }
+}
+
+renderer.setAnimationLoop(() => {
+  if ($("spin").checked) islandGroup.rotation.y += 0.003;
+  controls.update();
+  renderer.render(scene, camera);
+});
+
+// ---------- knobs (built from the Python PARAMS) ----------
+let params = {};
+let used = null;                 // layout -> setting names that layout reads
+const values = {};
+
+function buildSliders() {
+  const root = $("sliders");
+  root.innerHTML = "";
+  for (const [, items] of Object.entries(params))
+    for (const [name, [def]] of Object.entries(items)) if (!(name in values)) values[name] = def;
+  const keep = used ? new Set(used[String(values.layout)] || []) : null;
+  for (const [group, items] of Object.entries(params)) {
+    const names = Object.keys(items).filter((n) => !keep || keep.has(n));
+    if (!names.length) continue;   // nothing in this group applies to the current layout
+    const h = document.createElement("h2"); h.textContent = group; root.appendChild(h);
+    for (const name of names) {
+      const [def, lo, hi, step, help] = items[name];
+      const row = document.createElement("div"); row.className = "row";
+      row.innerHTML = `<label for="k_${name}"><span>${name}</span><span id="v_${name}"></span></label>
+        <input type="range" id="k_${name}" min="${lo}" max="${hi}" step="${step}" value="${values[name]}">
+        <small>${help}</small>`;
+      root.appendChild(row);
+      const input = row.querySelector("input"), out = row.querySelector(`#v_${name}`);
+      const show = () => (out.textContent = values[name]);
+      show();
+      input.oninput = () => {
+        values[name] = Number(input.value); show();
+        if (name === "layout") { buildSliders(); firstFrame = true; }   // different layout: different knobs, reframe
+        regen();
+      };
+    }
+  }
+}
+
+// ---------- talking to Python ----------
+let reqId = 0, timer = null;
+function body() { return JSON.stringify({ seed: Number($("seed").value) || 1, settings: values }); }
+
+function regen() {
+  clearTimeout(timer);
+  timer = setTimeout(async () => {
+    const id = ++reqId;
+    try {
+      const r = await fetch("/generate", { method: "POST", body: body() });
+      const data = await r.json();
+      if (id !== reqId) return;  // a newer request is on the way
+      if (data.error) return status(data.error, true);
+      showScene(data);
+      const st = data.stats;
+      $("jumpinfo").textContent = st.links
+        ? `${st.pads} pads · ${st.links.ramp} ramps · ${st.links.stairs} stairs · ${st.links.hop} hops\n` +
+          `${st.levels} heights · ${st.unreachable} unreachable`
+        : `${st.levels} levels · biggest step ${st.max_step_m} m · ${st.unjumpable_m} m of edges too tall to jump\n` +
+          `${st.pieces} pieces · ${st.stones} stones · ${st.unreachable} unreachable`;
+      status(st.links
+        ? `${st.tris.toLocaleString()} tris · ${st.balls} balls · ${st.ms_mesh}ms`
+        : `${st.tris.toLocaleString()} tris · ${st.balls} balls · ${(st.cells/1e6).toFixed(2)}M cells\n` +
+          `balls ${st.ms_balls}ms · field ${st.ms_field}ms · mesh ${st.ms_mesh}ms`);
+    } catch (e) { status("can't reach the Python server — is gui/server.py running?", true); }
+  }, 40);
+}
+
+$("seed").oninput = regen;
+$("dice").onclick = () => { $("seed").value = Math.floor(Math.random() * 99999); regen(); };
+$("reset").onclick = () => { for (const k in values) delete values[k]; buildSliders(); regen(); };
+$("export").onclick = async () => {
+  const b = JSON.parse(body()); b.target = $("target").value;
+  const r = await fetch("/export", { method: "POST", body: JSON.stringify(b) });
+  const d = await r.json();
+  d.error ? status(d.error, true) : status(`saved → ${d.folder}`);
+};
+
+params = await (await fetch("/params")).json();
+try { used = await (await fetch("/used")).json(); } catch (e) { used = null; }
+buildSliders();
+regen();
+</script>
+</body>
+</html>

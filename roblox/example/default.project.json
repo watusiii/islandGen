@@ -1,0 +1,53 @@
+{
+  "name": "IslandGenExample",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "IslandGen": {
+        "$path": "../src"
+      },
+      "Levels": {
+        "$path": "levels"
+      },
+      "IslandOptions": {
+        "$path": "shared/IslandOptions.luau"
+      }
+    },
+    "ServerScriptService": {
+      "Islands": {
+        "$path": "server/Islands.server.luau"
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "IslandsView": {
+          "$path": "client/IslandsView.client.luau"
+        }
+      }
+    },
+    "Workspace": {
+      "Ground": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "Size": [
+            200,
+            1,
+            200
+          ],
+          "Position": [
+            0,
+            -0.5,
+            0
+          ],
+          "Color": [
+            0.85,
+            0.82,
+            0.75
+          ],
+          "Material": "Sand"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "islandgen"
+version = "0.3.0"
+description = "Engine-agnostic procedural floating land for 3D platformers (metaball pads, towers, level data)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy", "scikit-image", "shapely", "mapbox_earcut"]
+
+[tool.setuptools.packages.find]
+include = ["islandgen*"]
