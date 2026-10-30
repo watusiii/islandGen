@@ -1,5 +1,7 @@
 # islandGen
 
+![islandGen: dragging sliders, the tower rebuilds live](docs/islandgen-demo.gif)
+
 Procedural floating land for 3D platformers. Low-poly pads with flat grass tops and faceted rock
 underneath, joined by ramps, stone stairs and hop stones, plus the level data a game needs to play it
 (collision, spawn, goal, route, collectible spots, prop spots).
